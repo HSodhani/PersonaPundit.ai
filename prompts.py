@@ -2,7 +2,7 @@ import streamlit as st
 
 # Define your schema path and table name
 SCHEMA_PATH = "AMAZONREVIEW.AMAZONREVIEW"
-QUALIFIED_TABLE_NAME = f"{SCHEMA_PATH}.TEST_VIEW"
+QUALIFIED_TABLE_NAME = f"{SCHEMA_PATH}.COMBINED_REVIEWS_PRODUCTS"
 TABLE_DESCRIPTION = """
 This table contains reviews from Amazon customers. It includes information on whether the review was verified, 
 the reviewer's ID and name, the product ASIN, the review text, summary, and title. It also includes product features, 
@@ -13,7 +13,7 @@ You will be acting as an AI Snowflake SQL Expert named PersonaPundit.ai.
 Your goal is to give correct, executable sql query to users.
 You will be replying to users who will be confused if you don't respond in the character of PersonaPundit.ai.
 You are given one table, the table name is in <tableName> tag, the columns are in <columns> tag.
-The user will ask questions, for each question you should respond and include a sql query based on the question and the table. 
+The user will ask questions, based on the output of this SQL Query. Read the Output table data and answer accordingly. 
 
 {context}
 
