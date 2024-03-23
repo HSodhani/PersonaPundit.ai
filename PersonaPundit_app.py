@@ -1,46 +1,112 @@
-from openai import OpenAI
-import re
 import streamlit as st
 import pandas as pd
 import snowflake.connector
-from prompts import get_system_prompt
+from openai import OpenAI
+import re
+import os
 
-st.title("👳🏽‍♂️ PersonaPundit.ai")
+from langchain.retrievers.web_research import WebResearchRetriever
+from langchain.vectorstores import FAISS
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.docstore import InMemoryDocstore
+from langchain.chat_models import ChatOpenAI
+from langchain.utilities import GoogleSearchAPIWrapper
+import faiss
 
-# Initialize the chat messages history
-client = OpenAI(api_key=st.secrets.OPENAI_API_KEY)
-if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "system", "content": get_system_prompt()}]
+# Assuming the necessary API keys and connection details are stored in Streamlit's secrets
+openai_api_key = st.secrets["OPENAI_API_KEY"]
+os.environ['GOOGLE_API_KEY'] = st.secrets["GOOGLE_API_KEY"]
+os.environ['GOOGLE_CSE_ID'] = st.secrets["GOOGLE_CSE_ID"]
+snowflake_user = st.secrets["connections"]["snowflake"]["user"]
+snowflake_password = st.secrets["connections"]["snowflake"]["password"]
+snowflake_account = st.secrets["connections"]["snowflake"]["account"]
+snowflake_warehouse = st.secrets["connections"]["snowflake"]["warehouse"]
+snowflake_database = st.secrets["connections"]["snowflake"]["database"]
+snowflake_schema = st.secrets["connections"]["snowflake"]["schema"]
 
-# Function to fetch review data from Snowflake
+st.title("👳🏽‍♂ PersonaPundit.ai")
+
+search = GoogleSearchAPIWrapper()
+
+# Initialize OpenAI client
+client = OpenAI(api_key=openai_api_key)
+
+# Initialize FAISS and embeddings
+def initialize_faiss_and_embeddings():
+    embeddings_model = OpenAIEmbeddings(api_key=openai_api_key)
+    embedding_size = 1536
+    index = faiss.IndexFlatL2(embedding_size)
+    vectorstore = FAISS(embeddings_model.embed_query, index, InMemoryDocstore({}), {})
+    return vectorstore
+
+vectorstore_public = initialize_faiss_and_embeddings()
+
+# Initialize WebResearchRetriever
+def initialize_web_research_retriever(vectorstore):
+    llm = ChatOpenAI(model_name="gpt-3.5-turbo-16k", api_key=openai_api_key, temperature=0, streaming=True)
+    
+    # Now, GoogleSearchAPIWrapper is initialized without explicit keys
+    search = GoogleSearchAPIWrapper()
+    
+    web_retriever = WebResearchRetriever.from_llm(
+        vectorstore=vectorstore,
+        llm=llm, 
+        search=search, 
+        num_search_results=3
+    )
+    return web_retriever
+
+web_retriever = initialize_web_research_retriever(vectorstore_public)
+
+# Fetch review data from Snowflake
 def fetch_review_data(reviewer_id):
     ctx = snowflake.connector.connect(
-        user=st.secrets["connections"]["snowflake"]["user"],
-        password=st.secrets["connections"]["snowflake"]["password"],
-        account=st.secrets["connections"]["snowflake"]["account"],
-        warehouse=st.secrets["connections"]["snowflake"]["warehouse"],
-        database=st.secrets["connections"]["snowflake"]["database"],
-        schema="AMAZONREVIEW"
+        user=snowflake_user,
+        password=snowflake_password,
+        account=snowflake_account,
+        warehouse=snowflake_warehouse,
+        database=snowflake_database,
+        schema=snowflake_schema
     )
     cs = ctx.cursor()
     try:
-        cs.execute(f"""
+        query = f"""
             SELECT REVIEWERNAME, REVIEWTEXT, SUMMARY, TITLE, FEATURE, DESCRIPTION, BRAND, PRICE
             FROM AMAZONREVIEW.TEST_VIEW
             WHERE REVIEWERID = '{reviewer_id}'
-        """)
+        """
+        cs.execute(query)
         df = pd.DataFrame(cs.fetchall(), columns=[x[0] for x in cs.description])
         return df
     finally:
         cs.close()
         ctx.close()
 
+def analyze_review_data(review_data):
+    # Implement the logic to analyze the review data and generate insights.
+    # This could include NLP processing, sentiment analysis, extracting key phrases, etc.
+    # For now, let's just concatenate the data into a simple string.
+    persona_details = f"""
+    Reviewer Name: {review_data['REVIEWERNAME'].iloc[0]}
+    Product Title: {review_data['TITLE'].iloc[0]}
+    Brand: {review_data['BRAND'].iloc[0]}
+    Price: {review_data['PRICE'].iloc[0]}
+    Review Summary: {review_data['SUMMARY'].iloc[0]}
+    Review Text: {review_data['REVIEWTEXT'].iloc[0]}
+    """
+    return persona_details
+
 # Function to generate a persona from review data using chat.completions
-def generate_persona(review_data):
+def generate_persona(reviewer_id):
+    review_data = fetch_review_data(reviewer_id)
+    if review_data.empty:
+        return "No data found for this Reviewer ID."
+
+    # Now you have the DataFrame, you can proceed to extract details and generate the persona
     reviewer_name = review_data["REVIEWERNAME"].iloc[0]
     price = review_data["PRICE"].iloc[0]
     review_text = review_data["REVIEWTEXT"].iloc[0]
-    title =  review_data["TITLE"].iloc[0]
+    title = review_data["TITLE"].iloc[0]
     description = review_data["DESCRIPTION"].iloc[0]
     summary = review_data["SUMMARY"].iloc[0]
     brand = review_data["BRAND"].iloc[0]
@@ -56,57 +122,79 @@ def generate_persona(review_data):
 
     return response.choices[0].message.content
 
-# Improved detection for generating a persona
+# Detecting persona request from user input
 def detect_persona_request(prompt):
-    # Check if the prompt mentions generating a persona
-    if "user persona" in prompt.lower():
-        # Attempt to extract a ReviewerID from the prompt
-        reviewer_id_match = re.search(r"reviewerID[:]*\s*(\S+)", prompt, re.IGNORECASE)
-        if reviewer_id_match:
-            return reviewer_id_match.group(1).strip()
+    match = re.search(r"reviewerID[:]\s(\S+)", prompt, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
     return None
 
-# Main chat input handling
-if prompt := st.chat_input():
-    reviewer_id = detect_persona_request(prompt)
-    if reviewer_id:
-        review_data = fetch_review_data(reviewer_id)
-        if not review_data.empty:
-            persona = generate_persona(review_data)
-            st.session_state.messages.append({"role": "user", "content": prompt, "persona": persona})
+# Add a function to process general knowledge questions
+def handle_general_query(query):
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",  # Make sure to use the correct model ID
+            messages=[{"role": "system", "content": "I am an AI trained to provide information and answer questions."},
+                      {"role": "user", "content": query}]
+        )
+        
+        # Accessing the response correctly
+        if response.choices:
+            first_choice = response.choices[0]
+            return first_choice.message.content  # Correctly access the content attribute
         else:
-            st.write("No data found for this Reviewer ID.")
+            return "No response was generated."
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
+
+# Update the function to detect the type of query and route it accordingly
+def process_input(user_input):
+    reviewer_id_match = re.search(r"reviewerID[:]\s(\S+)", user_input, re.IGNORECASE)
+    if reviewer_id_match:
+        reviewer_id = reviewer_id_match.group(1).strip()
+        persona = generate_persona(reviewer_id)
+        return persona, 'persona'
     else:
-        st.session_state.messages.append({"role": "user", "content": prompt})
+        # Call the updated function here
+        general_response = handle_general_query(user_input)
+        return general_response, 'general'
 
-# Display existing chat messages and personas if generated
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
-        if "persona" in message:
-            st.write("Generated Persona:", message["persona"])
-        if "results" in message:
-            st.dataframe(message["results"])
+# Streamlit UI handling logic
+st.subheader("Ask me anything:")
+user_input = st.text_area("Enter your request here:")
 
-# Generate a new response if the last message is not from the assistant
-if st.session_state.messages[-1]["role"] != "assistant":
-    with st.chat_message("assistant"):
-        response = ""
-        resp_container = st.empty()
-        for delta in client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": m["role"], "content": m["content"]} for m in st.session_state.messages],
-            stream=True,
-        ):
-            response += (delta.choices[0].delta.content or "")
-            resp_container.markdown(response)
+# Handling the input directly, without using session state for history
+if user_input:
+    response, response_type = process_input(user_input)
+    
+    # If it's a persona response, display it
+    if response_type == 'persona':
+        st.write("Generated Persona:")
+        st.write(response)
+    
+    # If it's a general knowledge response, display it
+    elif response_type == 'general':
+        st.write("General Knowledge Answer:")
+        st.write(response)
 
-        message = {"role": "assistant", "content": response}
-        # Attempt to parse the response for a SQL query and execute it if available
-        sql_match = re.search(r"sql\n(.*)\n", response, re.DOTALL)
-        if sql_match:
-            sql = sql_match.group(1)
-            conn = st.connection("snowflake")
-            message["results"] = conn.query(sql)
-            st.dataframe(message["results"])
-        st.session_state.messages.append(message)
+# Display instructions and example usage
+st.markdown("""
+### Instructions:
+- To generate a user persona, please type a request that includes a specific reviewer ID.
+- Example request: "Generate persona for reviewerID: A1JMSX54DO3LOP".
+
+### Note:
+- The persona generation leverages both the analysis of review data from Snowflake and enriched insights through web research.
+- Please ensure that the reviewer ID you provide matches an existing record in the Snowflake database for accurate persona generation.
+""")
+
+# Below this line, you could add more functionality or information about how the personas are generated,
+# tips for interacting with your application, or any additional features you provide.
+
+# Example of adding more interactivity or information
+st.sidebar.header("About PersonaPundit.ai")
+st.sidebar.info("""
+PersonaPundit.ai uses advanced AI techniques to generate detailed user personas based on product review data.
+By analyzing reviews and supplementing this analysis with web research, PersonaPundit.ai provides insights into
+the demographics, preferences, and behavior of users, helping businesses understand their customers better.
+""")
