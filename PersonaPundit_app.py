@@ -112,7 +112,7 @@ def generate_persona(reviewer_id):
     brand = review_data["BRAND"].iloc[0]
     messages = [
         {"role": "system", "content": "You are a wise sage providing insights into customer personas based on their reviews and brand"},
-        {"role": "user", "content": f"Based on this review by {reviewer_name} (print this on the top: Name: {reviewer_name}), who paid {price} for the product named {title} by {brand} which is described by {description}. The summary{summary}. Also, here is the review text: {review_text}. Generate a customer persona considering demographics, psychographics, behavioral traits, needs, goals, and pain points. Dive deeper into review text and get the deepest of Insights and use the {title} to suggest what other products the user might buy."}
+        {"role": "user", "content": f"Based on this review by {reviewer_name} (print this on the top: Name: {reviewer_name}), who paid {price} for the product named {title} by {brand} which is described by {description}. The summary{summary}. Also, here is the review text: {review_text}. Generate a customer persona considering demographics, psychographics, behavioral traits, needs, goals, and pain points. Dive deeper into review text and get the deepest of Insights and use the {title} to suggest what other products the user might buy. NOTE: Give me 5 Points for each block."}
     ]
 
     response = client.chat.completions.create(
@@ -167,23 +167,21 @@ user_input = st.text_area("Enter your request here:")
 if user_input:
     response, response_type = process_input(user_input)
     
-    # If it's a persona response, display it
     if response_type == 'persona':
         st.write("Generated Persona:")
         st.write(response)
-    
-    # If it's a general knowledge response, display it
     elif response_type == 'general':
         st.write("General Knowledge Answer:")
         st.write(response)
 
-# Display instructions and example usage
-st.markdown("""
-### Instructions:
-- To generate a user persona, please type a request that includes a specific reviewer ID.
-- Example request: "Generate persona for reviewerID: A1JMSX54DO3LOP".
 
-### Note:
+# Move instructions to a sidebar or a static section on the main page
+st.sidebar.header("Instructions:")
+st.sidebar.markdown("""
+- **To generate a user persona**, please type a request that includes a specific reviewer ID.
+- **Example request**: "Generate persona for reviewerID: A1JMSX54DO3LOP".
+
+**Note**:
 - The persona generation leverages both the analysis of review data from Snowflake and enriched insights through web research.
 - Please ensure that the reviewer ID you provide matches an existing record in the Snowflake database for accurate persona generation.
 """)
