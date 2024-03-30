@@ -112,7 +112,7 @@ def generate_persona(reviewer_id):
     brand = review_data["BRAND"].iloc[0]
     messages = [
         {"role": "system", "content": "You are a wise sage providing insights into customer personas based on their reviews and brand"},
-        {"role": "user", "content": f"Based on this review by {reviewer_name} (print this on the top: Name: {reviewer_name}), who paid {price} for the product named {title} by {brand} which is described by {description}. The summary{summary}. Also, here is the review text: {review_text}. Generate a customer persona considering demographics, psychographics, behavioral traits, needs, goals, and pain points."}
+        {"role": "user", "content": f"Based on this review by {reviewer_name} (print this on the top: Name: {reviewer_name}), who paid {price} for the product named {title} by {brand} which is described by {description}. The summary{summary}. Also, here is the review text: {review_text}. Generate a customer persona considering demographics, psychographics, behavioral traits, needs, goals, and pain points. Dive deeper into review text and get the deepest of Insights and use the {title} to suggest what other products the user might buy."}
     ]
 
     response = client.chat.completions.create(
