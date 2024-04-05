@@ -30,6 +30,50 @@ search = GoogleSearchAPIWrapper()
 
 # Initialize OpenAI client
 client = OpenAI(api_key=openai_api_key)
+# Initialize session state for conversations and the current conversation
+if 'conversations' not in st.session_state:
+    st.session_state['conversations'] = {}
+if 'current_conversation' not in st.session_state:
+    st.session_state['current_conversation'] = []
+
+# Save, Delete, and Load Conversation Functions
+def save_conversation(name):
+    if name and st.session_state['current_conversation']:
+        st.session_state['conversations'][name] = st.session_state['current_conversation'].copy()
+        st.sidebar.success("Conversation Saved!")
+        
+
+def delete_conversation(name):
+    if name in st.session_state['conversations']:
+        del st.session_state['conversations'][name]
+        st.sidebar.success("Conversation Deleted!")
+        st.experimental_rerun()
+
+# This function now sets a flag to indicate a conversation has been loaded
+def load_conversation(name):
+    if name in st.session_state['conversations']:
+        st.session_state['current_conversation'] = st.session_state['conversations'][name].copy()
+        st.session_state['loaded_conversation'] = True  # Set flag to indicate a conversation is loaded
+
+# Conversation Management UI in Sidebar
+st.sidebar.header("Conversations Management:")
+conversation_name = st.sidebar.text_input("Conversation Name:", key="conversation_name")
+
+if st.sidebar.button("Save Conversation"):
+    save_conversation(conversation_name)
+
+if st.sidebar.button("Delete Conversation"):
+    delete_conversation(conversation_name)
+
+selected_conversation = st.sidebar.selectbox("Select a Conversation", options=list(st.session_state['conversations'].keys()))
+
+if st.sidebar.button("Load Conversation"):
+    load_conversation(selected_conversation)
+
+if st.sidebar.button("Start New Conversation"):
+    st.session_state['current_conversation'] = []
+    st.session_state['loaded_conversation'] = False  # Reset flag when starting a new conversation
+    st.experimental_rerun()
 
 # Initialize FAISS and embeddings
 def initialize_faiss_and_embeddings():
@@ -161,19 +205,35 @@ def process_input(user_input):
 
 # Streamlit UI handling logic
 st.subheader("Ask me anything:")
-user_input = st.text_area("Enter your request here:")
 
-# Handling the input directly, without using session state for history
+# Initialize 'user_input' to an empty string to ensure it's always defined
+user_input = ""
+
+# Check if a conversation has been loaded
+if 'loaded_conversation' in st.session_state and st.session_state['loaded_conversation']:
+    st.write("Loaded Conversation:")
+    for i, (q, a) in enumerate(st.session_state['current_conversation'], start=1):
+        st.write(f"Q{i}: {q}")
+        st.write(f"A{i}: {a}")
+        st.write("---")
+else:
+    user_input = st.text_area("Enter your request here:", key='user_input', value="")
+
+# Assuming you have a function `process_input` that takes the user input, processes it, and returns a response and its type ('persona' or 'general')
 if user_input:
-    response, response_type = process_input(user_input)
+    # Process the user input
+    response, response_type = process_input(user_input)  # Make sure this function is correctly defined and returns a suitable response
     
+    # Update current conversation with the new Q&A pair
+    st.session_state['current_conversation'].append((user_input, response))
+    
+    # Display the response
     if response_type == 'persona':
         st.write("Generated Persona:")
         st.write(response)
     elif response_type == 'general':
         st.write("General Knowledge Answer:")
         st.write(response)
-
 
 # Move instructions to a sidebar or a static section on the main page
 st.sidebar.header("Instructions:")
