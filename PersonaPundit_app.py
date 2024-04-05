@@ -116,7 +116,7 @@ def fetch_review_data(reviewer_id):
     try:
         query = f"""
             SELECT REVIEWERNAME, REVIEWTEXT, SUMMARY, TITLE, FEATURE, DESCRIPTION, BRAND, PRICE
-            FROM AMAZONREVIEW.TEST_VIEW
+            FROM AMAZONREVIEW.TOP50_REVIEWERS_DETAILS
             WHERE REVIEWERID = '{reviewer_id}'
         """
         cs.execute(query)
