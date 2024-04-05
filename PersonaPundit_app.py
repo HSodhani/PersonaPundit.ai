@@ -140,13 +140,57 @@ def analyze_review_data(review_data):
     """
     return persona_details
 
+def save_persona_to_db(reviewer_id, persona):
+    with snowflake.connector.connect(
+        user=snowflake_user,
+        password=snowflake_password,
+        account=snowflake_account,
+        warehouse=snowflake_warehouse,
+        database=snowflake_database,
+        schema=snowflake_schema
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO AMAZONREVIEW.PERSONAS (REVIEWERID, PERSONA)
+                VALUES (%s, %s)
+            """, (reviewer_id, persona))
+            conn.commit()
+
+
+def fetch_persona_from_db(reviewer_id):
+    with snowflake.connector.connect(
+        user=snowflake_user,
+        password=snowflake_password,
+        account=snowflake_account,
+        warehouse=snowflake_warehouse,
+        database=snowflake_database,
+        schema=snowflake_schema
+    ) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT PERSONA FROM AMAZONREVIEW.PERSONAS
+                WHERE REVIEWERID = %s
+            """, (reviewer_id,))
+            result = cur.fetchone()
+            if result:
+                return result[0]  # Return the persona text
+            else:
+                return None
+
+
 # Function to generate a persona from review data using chat.completions
 def generate_persona(reviewer_id):
+    # Check if a persona already exists for this reviewerID
+    existing_persona = fetch_persona_from_db(reviewer_id)
+    if existing_persona:
+        return existing_persona  # Return the existing persona if found
+
+    # Fetch review data for the given reviewerID
     review_data = fetch_review_data(reviewer_id)
     if review_data.empty:
         return "No data found for this Reviewer ID."
 
-    # Now you have the DataFrame, you can proceed to extract details and generate the persona
+    # Extract details from the review data to generate the persona
     reviewer_name = review_data["REVIEWERNAME"].iloc[0]
     price = review_data["PRICE"].iloc[0]
     review_text = review_data["REVIEWTEXT"].iloc[0]
@@ -154,17 +198,28 @@ def generate_persona(reviewer_id):
     description = review_data["DESCRIPTION"].iloc[0]
     summary = review_data["SUMMARY"].iloc[0]
     brand = review_data["BRAND"].iloc[0]
+
+    # Prepare the prompt for the language model
     messages = [
-        {"role": "system", "content": "You are a wise sage providing insights into customer personas based on their reviews and brand"},
-        {"role": "user", "content": f"Based on this review by {reviewer_name} (print this on the top: Name: {reviewer_name}), who paid {price} for the product named {title} by {brand} which is described by {description}. The summary{summary}. Also, here is the review text: {review_text}. Generate a customer persona considering demographics, psychographics, behavioral traits, needs, goals, and pain points. Dive deeper into review text and get the deepest of Insights and use the {title} to suggest what other products the user might buy. NOTE: Give me 5 Points for each block."}
+        {"role": "system", "content": "You are a wise sage providing insights into customer personas based on their reviews and brand."},
+        {"role": "user", "content": f"Based on this review by {reviewer_name} (print this on the top: Name: {reviewer_name}), who paid {price} for the product named {title} by {brand} which is described as '{description}'. The summary is '{summary}'. Here is the review text: '{review_text}'. Generate a customer persona considering demographics, psychographics, behavioral traits, needs, goals, and pain points. Dive deeper into review text and provide deep insights. Use the {title} to suggest what other products the user might buy. NOTE: Give me 5 Points for each block."}
     ]
 
+    # Generate the persona using the language model
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=messages
     )
 
-    return response.choices[0].message.content
+    # Extract the generated persona from the response
+    generated_persona = response.choices[0].message.content
+
+    # Save the new persona to the database
+    save_persona_to_db(reviewer_id, generated_persona)
+
+    # Return the newly generated persona
+    return generated_persona
+
 
 # Detecting persona request from user input
 def detect_persona_request(prompt):
@@ -219,7 +274,7 @@ if 'loaded_conversation' in st.session_state and st.session_state['loaded_conver
 else:
     user_input = st.text_area("Enter your request here:", key='user_input', value="")
 
-# Assuming you have a function `process_input` that takes the user input, processes it, and returns a response and its type ('persona' or 'general')
+# Assuming you have a function process_input that takes the user input, processes it, and returns a response and its type ('persona' or 'general')
 if user_input:
     # Process the user input
     response, response_type = process_input(user_input)  # Make sure this function is correctly defined and returns a suitable response
@@ -238,10 +293,10 @@ if user_input:
 # Move instructions to a sidebar or a static section on the main page
 st.sidebar.header("Instructions:")
 st.sidebar.markdown("""
-- **To generate a user persona**, please type a request that includes a specific reviewer ID.
-- **Example request**: "Generate persona for reviewerID: A1JMSX54DO3LOP".
+- *To generate a user persona*, please type a request that includes a specific reviewer ID.
+- *Example request*: "Generate persona for reviewerID: A1JMSX54DO3LOP".
 
-**Note**:
+*Note*:
 - The persona generation leverages both the analysis of review data from Snowflake and enriched insights through web research.
 - Please ensure that the reviewer ID you provide matches an existing record in the Snowflake database for accurate persona generation.
 """)
