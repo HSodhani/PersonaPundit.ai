@@ -36,6 +36,49 @@ if 'conversations' not in st.session_state:
 if 'current_conversation' not in st.session_state:
     st.session_state['current_conversation'] = []
 
+def detect_special_command(user_input):
+    match = re.search(r"generate a group persona for people who love (.+)", user_input.lower())
+    if match:
+        topic = match.group(1)
+        return "generate_group_persona", topic
+    return None, None
+
+def fetch_all_personas():
+    with snowflake.connector.connect(
+        user=snowflake_user,
+        password=snowflake_password,
+        account=snowflake_account,
+        warehouse=snowflake_warehouse,
+        database=snowflake_database,
+        schema=snowflake_schema
+    ) as conn:
+        with conn.cursor() as cur:
+            query = "SELECT PERSONA FROM AMAZONREVIEW.PERSONAS_SUBSET"
+            cur.execute(query)
+            results = cur.fetchall()
+            if results:
+                return [result[0] for result in results]
+            else:
+                return []
+            
+def generate_insights_from_personas(personas, topic):
+    combined_personas = "\n\n".join(personas)
+    prompt = f"""
+    Considering the personas of people interested in {topic}, which are outlined as follows:
+    {combined_personas}
+
+    Generate insights on common characteristics, preferences, and potential product recommendations for this group, focusing on their interest in {topic}.
+    """
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "system", "content": prompt}]
+    )
+    if response.choices:
+        return response.choices[0].message.content
+    else:
+        return "No insights were generated."
+
+
 # Save, Delete, and Load Conversation Functions
 def save_conversation(name):
     if name and st.session_state['current_conversation']:
@@ -222,11 +265,13 @@ def generate_persona(reviewer_id):
 
 
 # Detecting persona request from user input
-def detect_persona_request(prompt):
-    match = re.search(r"reviewerID[:]\s(\S+)", prompt, re.IGNORECASE)
+def detect_special_command(user_input):
+    # This tries to find a command pattern for generating a group persona based on a topic of interest
+    match = re.search(r"generate a group persona for people who love (.+)", user_input.lower())
     if match:
-        return match.group(1).strip()
-    return None
+        topic = match.group(1)
+        return "generate_group_persona", topic
+    return None, None
 
 # Add a function to process general knowledge questions
 def handle_general_query(query):
@@ -248,13 +293,21 @@ def handle_general_query(query):
 
 # Update the function to detect the type of query and route it accordingly
 def process_input(user_input):
+    # First, check for individual reviewer IDs
     reviewer_id_match = re.search(r"reviewerID[:]\s(\S+)", user_input, re.IGNORECASE)
     if reviewer_id_match:
         reviewer_id = reviewer_id_match.group(1).strip()
         persona = generate_persona(reviewer_id)
         return persona, 'persona'
     else:
-        # Call the updated function here
+        # Then, check for the special command to generate a group persona
+        command, topic = detect_special_command(user_input)
+        if command == "generate_group_persona" and topic:
+            personas = fetch_all_personas()
+            if personas:
+                insights = generate_insights_from_personas(personas, topic)
+                return insights, 'persona_insights'
+        # Fallback for other types of queries that do not match the above conditions
         general_response = handle_general_query(user_input)
         return general_response, 'general'
 
@@ -277,26 +330,29 @@ else:
 # Assuming you have a function process_input that takes the user input, processes it, and returns a response and its type ('persona' or 'general')
 if user_input:
     # Process the user input
-    response, response_type = process_input(user_input)  # Make sure this function is correctly defined and returns a suitable response
+    response, response_type = process_input(user_input)
     
     # Update current conversation with the new Q&A pair
     st.session_state['current_conversation'].append((user_input, response))
     
-    # Display the response
-    if response_type == 'persona':
+    # Ensure the response is displayed based on its type
+    if response_type == 'persona' or response_type == 'persona_insights':
         st.write("Generated Persona:")
-        st.write(response)
     elif response_type == 'general':
         st.write("General Knowledge Answer:")
-        st.write(response)
+    else:
+        st.write("Response:")
+    
+    st.write(response)  # This line actually prints the response
 
 # Move instructions to a sidebar or a static section on the main page
 st.sidebar.header("Instructions:")
 st.sidebar.markdown("""
-- *To generate a user persona*, please type a request that includes a specific reviewer ID.
-- *Example request*: "Generate persona for reviewerID: A1JMSX54DO3LOP".
+- To generate a user persona, please type a request that includes a specific reviewer ID.
+- Example request: "Generate persona for reviewerID: A1JMSX54DO3LOP".
+- Example request: "generate a group persona for people who love books and seperated by ReviewerID's"
 
-*Note*:
+Note:
 - The persona generation leverages both the analysis of review data from Snowflake and enriched insights through web research.
 - Please ensure that the reviewer ID you provide matches an existing record in the Snowflake database for accurate persona generation.
 """)
