@@ -4,7 +4,6 @@ import snowflake.connector
 from openai import OpenAI
 import re
 import os
-
 from langchain.retrievers.web_research import WebResearchRetriever
 from langchain.vectorstores import FAISS
 from langchain.embeddings.openai import OpenAIEmbeddings
@@ -12,6 +11,8 @@ from langchain.docstore import InMemoryDocstore
 from langchain.chat_models import ChatOpenAI
 from langchain.utilities import GoogleSearchAPIWrapper
 import faiss
+import boto3
+import json
 
 # Assuming the necessary API keys and connection details are stored in Streamlit's secrets
 openai_api_key = st.secrets["OPENAI_API_KEY"]
@@ -23,16 +24,35 @@ snowflake_account = st.secrets["connections"]["snowflake"]["account"]
 snowflake_warehouse = st.secrets["connections"]["snowflake"]["warehouse"]
 snowflake_database = st.secrets["connections"]["snowflake"]["database"]
 snowflake_schema = st.secrets["connections"]["snowflake"]["schema"]
+aws_access_key_id = st.secrets["AWS_ACCESS_KEY_ID"]
+aws_secret_access_key = st.secrets["AWS_SECRET_ACCESS_KEY"]
 
 st.title("👳🏽‍♂ PersonaPundit.ai")
 
 search = GoogleSearchAPIWrapper()
 
+def load_all_conversations_from_s3():
+    s3 = boto3.client('s3', aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
+    bucket_name = 'personapundit'
+    conversations = {}
+    try:
+        response = s3.list_objects_v2(Bucket=bucket_name, Prefix='conversations/')
+        for item in response.get('Contents', []):
+            key = item['Key']
+            obj = s3.get_object(Bucket=bucket_name, Key=key)
+            data = obj['Body'].read().decode('utf-8')
+            conversation_name = key.split('/')[-1].replace('.json', '')
+            conversations[conversation_name] = json.loads(data)
+        st.sidebar.write("Conversations loaded successfully.")
+    except Exception as e:
+        st.sidebar.error(f"Failed to load conversations: {str(e)}")
+    return conversations
+
 # Initialize OpenAI client
 client = OpenAI(api_key=openai_api_key)
 # Initialize session state for conversations and the current conversation
 if 'conversations' not in st.session_state:
-    st.session_state['conversations'] = {}
+    st.session_state.conversations = load_all_conversations_from_s3()
 if 'current_conversation' not in st.session_state:
     st.session_state['current_conversation'] = []
 
@@ -60,7 +80,29 @@ def fetch_all_personas():
                 return [result[0] for result in results]
             else:
                 return []
-            
+
+# Configure the boto3 client
+s3 = boto3.client(
+    's3',
+    aws_access_key_id=aws_access_key_id,
+    aws_secret_access_key=aws_secret_access_key
+)
+           
+s3 = boto3.client('s3')
+bucket_name = 'personapundit' 
+
+def save_conversations_to_s3(conversation_dict, file_name):
+    """
+    Save the conversation dictionary to an S3 bucket as a JSON file.
+    """
+    s3.put_object(
+        Bucket=bucket_name,
+        Key=f'conversations/{file_name}',
+        Body=json.dumps(conversation_dict).encode('utf-8')
+    )
+    st.sidebar.success("Conversation saved to S3!")
+
+
 def generate_insights_from_personas(personas, topic):
     combined_personas = "\n\n".join(personas)
     prompt = f"""
@@ -82,20 +124,25 @@ def generate_insights_from_personas(personas, topic):
 # Save, Delete, and Load Conversation Functions
 def save_conversation(name):
     if name and st.session_state['current_conversation']:
-        st.session_state['conversations'][name] = st.session_state['current_conversation'].copy()
-        st.sidebar.success("Conversation Saved!")
-        
+        # Save to S3
+        save_conversations_to_s3(st.session_state['current_conversation'], f"{name}.json")
 
 def delete_conversation(name):
-    if name in st.session_state['conversations']:
-        del st.session_state['conversations'][name]
-        st.sidebar.success("Conversation Deleted!")
+    if name in st.session_state.conversations:
+        # Attempt to delete the file from S3 bucket
+        try:
+            s3.delete_object(Bucket=bucket_name, Key=f'conversations/{name}.json')
+            # Remove the conversation from session state if successfully deleted from S3
+            del st.session_state.conversations[name]
+            st.sidebar.success("Conversation Deleted!")
+        except Exception as e:
+            st.sidebar.error(f"Failed to delete conversation: {str(e)}")
         st.experimental_rerun()
 
-# This function now sets a flag to indicate a conversation has been loaded
 def load_conversation(name):
-    if name in st.session_state['conversations']:
-        st.session_state['current_conversation'] = st.session_state['conversations'][name].copy()
+    if name:
+        loaded_convo = st.session_state.conversations[name]
+        st.session_state['current_conversation'] = loaded_convo
         st.session_state['loaded_conversation'] = True  # Set flag to indicate a conversation is loaded
 
 # Conversation Management UI in Sidebar
