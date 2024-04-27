@@ -1,4 +1,4 @@
-# PersonaPundit.ai
+# 👳🏽‍♂ PersonaPundit.ai
 ## Overview :
 
 __PersonaPundit.ai__ is a Streamlit-based web application that leverages advanced AI techniques, including OpenAI's GPT-3.5 and Gemini models, to generate detailed user personas from product review data. This application uses a variety of data sources and APIs, such as Snowflake for database management, Amazon S3 for data storage, and Google API for enhanced web research, providing businesses with insights into customer demographics, preferences, and behaviors.
