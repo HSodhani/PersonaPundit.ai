@@ -43,7 +43,7 @@ Place your API keys and database credentials in secrets.toml or set them as envi
 
 - #### Run the Streamlit Application:
 ```
-streamlit run PersonaPundit_app.py
+streamlit run login.py
 ```
 
 
