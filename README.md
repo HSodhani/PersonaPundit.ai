@@ -54,7 +54,7 @@ streamlit run login.py
 - __Explore Group Insights:__ Generate insights for groups based on common interests by entering a relevant query.
 
 ## Youtube Video:
-Coming Soon...
+https://youtu.be/FaLBxfkfEJg
 
 ## Contribute:
 
