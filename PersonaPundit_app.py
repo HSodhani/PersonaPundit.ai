@@ -156,7 +156,7 @@ def main():
                 else:
                     return []
 
-    # Configure the boto3 client
+    # Configure the boto3 client.
     s3 = boto3.client(
         's3',
         aws_access_key_id=aws_access_key_id,
