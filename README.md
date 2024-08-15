@@ -61,5 +61,5 @@ Coming Soon...
 Contributions are welcome! Please fork the repository, make your changes, and submit a pull request. You can also open issues for bugs you've found or features you think would add value to the project.
 
 ## Contact Us:
-Hardik Sodhani (NUID: 002770306) (Linkedin: https://www.linkedin.com/in/hardiksodhani/) (Email: sodhani.h@northeastern.edu)
-Rucha Chotalia (NUID: 002711888) (Linkedin: https://www.linkedin.com/in/ruchachotalia/) (Email: chotalia.r@northeastern.edu)
+- Hardik Sodhani (NUID: 002770306) (Linkedin: https://www.linkedin.com/in/hardiksodhani/) (Email: sodhani.h@northeastern.edu)
+- Rucha Chotalia (NUID: 002711888) (Linkedin: https://www.linkedin.com/in/ruchachotalia/) (Email: chotalia.r@northeastern.edu)
