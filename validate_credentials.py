@@ -1,7 +1,7 @@
 import streamlit as st
 from openai import OpenAI
 
-## Validate Snowflake connection ##
+## Validate Snowflake connection 
 
 conn = st.connection("snowflake")
 df = conn.query("select current_warehouse()")
