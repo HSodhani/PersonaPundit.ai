@@ -1,6 +1,6 @@
 import streamlit as st
 
-# Define your schema path and table name
+# Define your schema path and table name.
 SCHEMA_PATH = "AMAZONREVIEW.AMAZONREVIEW"
 QUALIFIED_TABLE_NAME = f"{SCHEMA_PATH}.COMBINED_REVIEWS_PRODUCTS"
 TABLE_DESCRIPTION = """
