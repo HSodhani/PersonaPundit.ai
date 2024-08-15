@@ -5,7 +5,7 @@ import bcrypt
 from botocore.exceptions import NoCredentialsError, ClientError
 from PersonaPundit_app import main as run_persona_pundit
 
-# Initialize a boto3 client
+# Initialize a boto3 client.
 s3_client = boto3.client('s3')
 aws_access_key_id = st.secrets["AWS_ACCESS_KEY_ID"]
 aws_secret_access_key = st.secrets["AWS_SECRET_ACCESS_KEY"]
